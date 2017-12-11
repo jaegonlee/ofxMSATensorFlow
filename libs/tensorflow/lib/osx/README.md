@@ -2,9 +2,9 @@ Download the library from https://drive.google.com/file/d/1G1NyQkOueOYzRuK9OYSTq
 
 How to make shared libraries with Bazel at Tensorflow
 https://stackoverflow.com/questions/38256180/how-to-make-shared-libraries-with-bazel-at-tensorflow
-
+```
 bazel build --config=cuda --config=opt --copt=-mavx --copt=-mavx2 --copt=-mfma --copt=-msse4.2 --action_env PATH --action_env LD_LIBRARY_PATH --action_env DYLD_LIBRARY_PATH //tensorflow:libtensorflow_cc.so
-
+```
 
 Build Tensorflow 1.4 Mac OS High Sierra 10.13 GPU Support 
 https://gist.github.com/smitshilu/53cf9ff0fd6cdb64cca69a7e2827ed0f
