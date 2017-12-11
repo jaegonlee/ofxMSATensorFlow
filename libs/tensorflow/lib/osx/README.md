@@ -1,9 +1,18 @@
-Download the library from 
-https://github.com/memo/ofxMSATensorFlow/releases
+Download the library from ()
+
+How to make shared libraries with Bazel at Tensorflow
+https://stackoverflow.com/questions/38256180/how-to-make-shared-libraries-with-bazel-at-tensorflow
+
+bazel build --config=cuda --config=opt --copt=-mavx --copt=-mavx2 --copt=-mfma --copt=-msse4.2 --action_env PATH --action_env LD_LIBRARY_PATH --action_env DYLD_LIBRARY_PATH //tensorflow:libtensorflow_cc.so
+
+
+Build Tensorflow 1.4 Mac OS High Sierra 10.13 GPU Support 
+https://gist.github.com/smitshilu/53cf9ff0fd6cdb64cca69a7e2827ed0f
+
 
 If it doesn’t already exist, create a folder called ‘lib’ in your home folder. 
 
-Copy libtensorflow_cc.so into ~/lib
+Copy libtensorflow_cc.so and libtensorflow_framework.so into ~/lib
 (Make sure there’s a copy here too).
 
 Alternatively see below for other ways of installing shared libraries
