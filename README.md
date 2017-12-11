@@ -4,7 +4,7 @@
 
 This update includes the newly released **TensorFlow r1.4** and has been tested with **openFrameworks 0.9.8**.
 
-I provide precompiled libraries for **Linux** and **OSX** (though OSX might lag a little bit behind as I don't have regular access). For linux there are both **GPU** and **CPU**-only libs, while OSX is **CPU** and **GPU**. I haven't touched Windows yet as building from sources is 'experimental' (and doing Linux and OSX was painful enough).
+I provide precompiled libraries **OSX** (though OSX might lag a little bit behind as I don't have regular access). For OSX **GPU**. I haven't touched Windows yet as building from sources is 'experimental' (and doing Linux and OSX was painful enough).
 
 You can find instructions and more information in the **[wiki](https://github.com/memo/ofxMSATensorFlow/wiki)**, particularly for **[Getting Started](https://github.com/memo/ofxMSATensorFlow/wiki/Getting-started)**.
 
