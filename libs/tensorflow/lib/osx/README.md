@@ -15,5 +15,9 @@ If it doesn’t already exist, create a folder called ‘lib’ in your home fol
 Copy libtensorflow_cc.so and libtensorflow_framework.so into ~/lib
 (Make sure there’s a copy here too).
 
+Error: Library not loaded: @rpath/libcudart.9.0.dylib
+https://github.com/tensorflow/tensorflow/issues/6729
+I don't know how to solve. So I just copied cuda libs to /usr/local/lib.
+
 Alternatively see below for other ways of installing shared libraries
 https://developer.apple.com/library/mac/documentation/DeveloperTools/Conceptual/DynamicLibraries/100-Articles/UsingDynamicLibraries.html#//apple_ref/doc/uid/TP40002182-SW10
