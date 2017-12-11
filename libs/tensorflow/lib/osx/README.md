@@ -1,4 +1,4 @@
-Download the library from ()
+Download the library from https://drive.google.com/file/d/1G1NyQkOueOYzRuK9OYSTqAa5Tl3VmZF0/view?usp=sharing
 
 How to make shared libraries with Bazel at Tensorflow
 https://stackoverflow.com/questions/38256180/how-to-make-shared-libraries-with-bazel-at-tensorflow
