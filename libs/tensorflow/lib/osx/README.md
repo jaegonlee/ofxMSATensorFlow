@@ -17,6 +17,7 @@ Copy libtensorflow_cc.so and libtensorflow_framework.so into ~/lib
 
 Error: Library not loaded: @rpath/libcudart.9.0.dylib
 https://github.com/tensorflow/tensorflow/issues/6729
+
 I don't know how to solve. So I just copied cuda libs to /usr/local/lib.
 
 Alternatively see below for other ways of installing shared libraries
