@@ -267,6 +267,65 @@ class ApplyAdam {
   ::tensorflow::Output out;
 };
 
+/// Update '*var' according to the AddSign update.
+///
+/// m_t <- beta1 * m_{t-1} + (1 - beta1) * g
+/// update <- (alpha + sign_decay * sign(g) *sign(m)) * g
+/// variable <- variable - lr_t * update
+///
+/// Arguments:
+/// * scope: A Scope object
+/// * var: Should be from a Variable().
+/// * m: Should be from a Variable().
+/// * lr: Scaling factor. Must be a scalar.
+/// * alpha: Must be a scalar.
+/// * sign_decay: Must be a scalar.
+/// * beta: Must be a scalar.
+/// * grad: The gradient.
+///
+/// Optional attributes (see `Attrs`):
+/// * use_locking: If `True`, updating of the var and m tensors is
+/// protected by a lock; otherwise the behavior is undefined, but may exhibit less
+/// contention.
+///
+/// Returns:
+/// * `Output`: Same as "var".
+class ApplyAddSign {
+ public:
+  /// Optional attribute setters for ApplyAddSign
+  struct Attrs {
+    /// If `True`, updating of the var and m tensors is
+    /// protected by a lock; otherwise the behavior is undefined, but may exhibit less
+    /// contention.
+    ///
+    /// Defaults to false
+    Attrs UseLocking(bool x) {
+      Attrs ret = *this;
+      ret.use_locking_ = x;
+      return ret;
+    }
+
+    bool use_locking_ = false;
+  };
+  ApplyAddSign(const ::tensorflow::Scope& scope, ::tensorflow::Input var,
+             ::tensorflow::Input m, ::tensorflow::Input lr, ::tensorflow::Input
+             alpha, ::tensorflow::Input sign_decay, ::tensorflow::Input beta,
+             ::tensorflow::Input grad);
+  ApplyAddSign(const ::tensorflow::Scope& scope, ::tensorflow::Input var,
+             ::tensorflow::Input m, ::tensorflow::Input lr, ::tensorflow::Input
+             alpha, ::tensorflow::Input sign_decay, ::tensorflow::Input beta,
+             ::tensorflow::Input grad, const ApplyAddSign::Attrs& attrs);
+  operator ::tensorflow::Output() const { return out; }
+  operator ::tensorflow::Input() const { return out; }
+  ::tensorflow::Node* node() const { return out.node(); }
+
+  static Attrs UseLocking(bool x) {
+    return Attrs().UseLocking(x);
+  }
+
+  ::tensorflow::Output out;
+};
+
 /// Update '*var' according to the centered RMSProp algorithm.
 ///
 /// The centered RMSProp algorithm uses an estimate of the centered second moment
@@ -343,63 +402,6 @@ class ApplyCenteredRMSProp {
   }
 
   ::tensorflow::Output out;
-};
-
-/// var -= alpha * (delta + lambda * delta * (var - shadow))
-///
-/// Update '*shadow' by changing it to the new value of 'var'
-///
-/// Arguments:
-/// * scope: A Scope object
-/// * var: Should be from a Variable().
-/// * alpha: Scaling factor. Must be a scalar.
-/// * delta: The change.
-/// * lambda: The variance parameter.
-/// * shadow: Same as "var".
-///
-/// Optional attributes (see `Attrs`):
-/// * use_locking: If `True`, the subtraction will be protected by a lock;
-/// otherwise the behavior is undefined, but may exhibit less contention.
-///
-/// Returns:
-/// * the created `Operation`
-class ApplyDelayCompensatedGradientDescent {
- public:
-  /// Optional attribute setters for ApplyDelayCompensatedGradientDescent
-  struct Attrs {
-    /// If `True`, the subtraction will be protected by a lock;
-    /// otherwise the behavior is undefined, but may exhibit less contention.
-    ///
-    /// Defaults to false
-    Attrs UseLocking(bool x) {
-      Attrs ret = *this;
-      ret.use_locking_ = x;
-      return ret;
-    }
-
-    bool use_locking_ = false;
-  };
-  ApplyDelayCompensatedGradientDescent(const ::tensorflow::Scope& scope,
-                                     ::tensorflow::Input var,
-                                     ::tensorflow::Input alpha,
-                                     ::tensorflow::Input delta,
-                                     ::tensorflow::Input lambda,
-                                     ::tensorflow::Input shadow);
-  ApplyDelayCompensatedGradientDescent(const ::tensorflow::Scope& scope,
-                                     ::tensorflow::Input var,
-                                     ::tensorflow::Input alpha,
-                                     ::tensorflow::Input delta,
-                                     ::tensorflow::Input lambda,
-                                     ::tensorflow::Input shadow, const
-                                     ApplyDelayCompensatedGradientDescent::Attrs&
-                                     attrs);
-  operator ::tensorflow::Operation() const { return operation; }
-
-  static Attrs UseLocking(bool x) {
-    return Attrs().UseLocking(x);
-  }
-
-  Operation operation;
 };
 
 /// Update '*var' according to the Ftrl-proximal scheme.
@@ -648,6 +650,66 @@ class ApplyMomentum {
   }
   static Attrs UseNesterov(bool x) {
     return Attrs().UseNesterov(x);
+  }
+
+  ::tensorflow::Output out;
+};
+
+/// Update '*var' according to the AddSign update.
+///
+/// m_t <- beta1 * m_{t-1} + (1 - beta1) * g
+/// update <- exp(logbase * sign_decay * sign(g) * sign(m_t)) * g
+/// variable <- variable - lr_t * update
+///
+/// Arguments:
+/// * scope: A Scope object
+/// * var: Should be from a Variable().
+/// * m: Should be from a Variable().
+/// * lr: Scaling factor. Must be a scalar.
+/// * logbase: Must be a scalar.
+/// * sign_decay: Must be a scalar.
+/// * beta: Must be a scalar.
+/// * grad: The gradient.
+///
+/// Optional attributes (see `Attrs`):
+/// * use_locking: If `True`, updating of the var and m tensors is
+/// protected by a lock; otherwise the behavior is undefined, but may exhibit less
+/// contention.
+///
+/// Returns:
+/// * `Output`: Same as "var".
+class ApplyPowerSign {
+ public:
+  /// Optional attribute setters for ApplyPowerSign
+  struct Attrs {
+    /// If `True`, updating of the var and m tensors is
+    /// protected by a lock; otherwise the behavior is undefined, but may exhibit less
+    /// contention.
+    ///
+    /// Defaults to false
+    Attrs UseLocking(bool x) {
+      Attrs ret = *this;
+      ret.use_locking_ = x;
+      return ret;
+    }
+
+    bool use_locking_ = false;
+  };
+  ApplyPowerSign(const ::tensorflow::Scope& scope, ::tensorflow::Input var,
+               ::tensorflow::Input m, ::tensorflow::Input lr,
+               ::tensorflow::Input logbase, ::tensorflow::Input sign_decay,
+               ::tensorflow::Input beta, ::tensorflow::Input grad);
+  ApplyPowerSign(const ::tensorflow::Scope& scope, ::tensorflow::Input var,
+               ::tensorflow::Input m, ::tensorflow::Input lr,
+               ::tensorflow::Input logbase, ::tensorflow::Input sign_decay,
+               ::tensorflow::Input beta, ::tensorflow::Input grad, const
+               ApplyPowerSign::Attrs& attrs);
+  operator ::tensorflow::Output() const { return out; }
+  operator ::tensorflow::Input() const { return out; }
+  ::tensorflow::Node* node() const { return out.node(); }
+
+  static Attrs UseLocking(bool x) {
+    return Attrs().UseLocking(x);
   }
 
   ::tensorflow::Output out;
@@ -1080,6 +1142,64 @@ class ResourceApplyAdam {
   Operation operation;
 };
 
+/// Update '*var' according to the AddSign update.
+///
+/// m_t <- beta1 * m_{t-1} + (1 - beta1) * g
+/// update <- (alpha + sign_decay * sign(g) *sign(m)) * g
+/// variable <- variable - lr_t * update
+///
+/// Arguments:
+/// * scope: A Scope object
+/// * var: Should be from a Variable().
+/// * m: Should be from a Variable().
+/// * lr: Scaling factor. Must be a scalar.
+/// * alpha: Must be a scalar.
+/// * sign_decay: Must be a scalar.
+/// * beta: Must be a scalar.
+/// * grad: The gradient.
+///
+/// Optional attributes (see `Attrs`):
+/// * use_locking: If `True`, updating of the var and m tensors is
+/// protected by a lock; otherwise the behavior is undefined, but may exhibit less
+/// contention.
+///
+/// Returns:
+/// * the created `Operation`
+class ResourceApplyAddSign {
+ public:
+  /// Optional attribute setters for ResourceApplyAddSign
+  struct Attrs {
+    /// If `True`, updating of the var and m tensors is
+    /// protected by a lock; otherwise the behavior is undefined, but may exhibit less
+    /// contention.
+    ///
+    /// Defaults to false
+    Attrs UseLocking(bool x) {
+      Attrs ret = *this;
+      ret.use_locking_ = x;
+      return ret;
+    }
+
+    bool use_locking_ = false;
+  };
+  ResourceApplyAddSign(const ::tensorflow::Scope& scope, ::tensorflow::Input var,
+                     ::tensorflow::Input m, ::tensorflow::Input lr,
+                     ::tensorflow::Input alpha, ::tensorflow::Input sign_decay,
+                     ::tensorflow::Input beta, ::tensorflow::Input grad);
+  ResourceApplyAddSign(const ::tensorflow::Scope& scope, ::tensorflow::Input var,
+                     ::tensorflow::Input m, ::tensorflow::Input lr,
+                     ::tensorflow::Input alpha, ::tensorflow::Input sign_decay,
+                     ::tensorflow::Input beta, ::tensorflow::Input grad, const
+                     ResourceApplyAddSign::Attrs& attrs);
+  operator ::tensorflow::Operation() const { return operation; }
+
+  static Attrs UseLocking(bool x) {
+    return Attrs().UseLocking(x);
+  }
+
+  Operation operation;
+};
+
 /// Update '*var' according to the centered RMSProp algorithm.
 ///
 /// The centered RMSProp algorithm uses an estimate of the centered second moment
@@ -1401,6 +1521,66 @@ class ResourceApplyMomentum {
   }
   static Attrs UseNesterov(bool x) {
     return Attrs().UseNesterov(x);
+  }
+
+  Operation operation;
+};
+
+/// Update '*var' according to the AddSign update.
+///
+/// m_t <- beta1 * m_{t-1} + (1 - beta1) * g
+/// update <- exp(logbase * sign_decay * sign(g) * sign(m_t)) * g
+/// variable <- variable - lr_t * update
+///
+/// Arguments:
+/// * scope: A Scope object
+/// * var: Should be from a Variable().
+/// * m: Should be from a Variable().
+/// * lr: Scaling factor. Must be a scalar.
+/// * logbase: Must be a scalar.
+/// * sign_decay: Must be a scalar.
+/// * beta: Must be a scalar.
+/// * grad: The gradient.
+///
+/// Optional attributes (see `Attrs`):
+/// * use_locking: If `True`, updating of the var and m tensors is
+/// protected by a lock; otherwise the behavior is undefined, but may exhibit less
+/// contention.
+///
+/// Returns:
+/// * the created `Operation`
+class ResourceApplyPowerSign {
+ public:
+  /// Optional attribute setters for ResourceApplyPowerSign
+  struct Attrs {
+    /// If `True`, updating of the var and m tensors is
+    /// protected by a lock; otherwise the behavior is undefined, but may exhibit less
+    /// contention.
+    ///
+    /// Defaults to false
+    Attrs UseLocking(bool x) {
+      Attrs ret = *this;
+      ret.use_locking_ = x;
+      return ret;
+    }
+
+    bool use_locking_ = false;
+  };
+  ResourceApplyPowerSign(const ::tensorflow::Scope& scope, ::tensorflow::Input
+                       var, ::tensorflow::Input m, ::tensorflow::Input lr,
+                       ::tensorflow::Input logbase, ::tensorflow::Input
+                       sign_decay, ::tensorflow::Input beta,
+                       ::tensorflow::Input grad);
+  ResourceApplyPowerSign(const ::tensorflow::Scope& scope, ::tensorflow::Input
+                       var, ::tensorflow::Input m, ::tensorflow::Input lr,
+                       ::tensorflow::Input logbase, ::tensorflow::Input
+                       sign_decay, ::tensorflow::Input beta,
+                       ::tensorflow::Input grad, const
+                       ResourceApplyPowerSign::Attrs& attrs);
+  operator ::tensorflow::Operation() const { return operation; }
+
+  static Attrs UseLocking(bool x) {
+    return Attrs().UseLocking(x);
   }
 
   Operation operation;

@@ -354,6 +354,28 @@ class Concat {
   ::tensorflow::Output output;
 };
 
+/// Shuffle dimensions of x according to a permutation and conjugate the result.
+///
+/// The output `y` has the same rank as `x`. The shapes of `x` and `y` satisfy:
+///   `y.shape[i] == x.shape[perm[i]] for i in [0, 1, ..., rank(x) - 1]`
+///   `y[i,j,k,...,s,t,u] == conj(x[perm[i], perm[j], perm[k],...,perm[s], perm[t], perm[u]])`
+///
+/// Arguments:
+/// * scope: A Scope object
+///
+/// Returns:
+/// * `Output`: The y tensor.
+class ConjugateTranspose {
+ public:
+  ConjugateTranspose(const ::tensorflow::Scope& scope, ::tensorflow::Input x,
+                   ::tensorflow::Input perm);
+  operator ::tensorflow::Output() const { return y; }
+  operator ::tensorflow::Input() const { return y; }
+  ::tensorflow::Node* node() const { return y.node(); }
+
+  ::tensorflow::Output y;
+};
+
 /// Identity op for gradient debugging.
 ///
 /// This op is hidden from public in Python. It is used by TensorFlow Debugger to
@@ -387,23 +409,34 @@ class DebugGradientIdentity {
 ///     into non-overlapping blocks of size `block_size x block_size`
 ///   * The width the output tensor is `input_depth * block_size`, whereas the
 ///     height is `input_height * block_size`.
+///   * The Y, X coordinates within each block of the output image are determined
+///     by the high order component of the input channel index.
 ///   * The depth of the input tensor must be divisible by
 ///     `block_size * block_size`.
 ///
-/// That is, assuming the input is in the shape:
-/// `[batch, height, width, depth]`,
-/// the shape of the output will be:
-/// `[batch, height*block_size, width*block_size, depth/(block_size*block_size)]`
+/// The `data_format` attr specifies the layout of the input and output tensors
+/// with the following options:
+///   "NHWC": `[ batch, height, width, channels ]`
+///   "NCHW": `[ batch, channels, height, width ]`
+///   "NCHW_VECT_C":
+///       `qint8 [ batch, channels / 4, height, width, 4 ]`
 ///
-/// This operation requires that the input tensor be of rank 4, and that
-/// `block_size` be >=1 and that `block_size * block_size` be a divisor of the
-/// input depth.
+/// It is useful to consider the operation as transforming a 6-D Tensor.
+/// e.g. for data_format = NHWC,
+///      Each element in the input tensor can be specified via 6 coordinates,
+///      ordered by decreasing memory layout significance as:
+///      n,iY,iX,bY,bX,oC  (where n=batch index, iX, iY means X or Y coordinates
+///                         within the input image, bX, bY means coordinates
+///                         within the output block, oC means output channels).
+///      The output would be the input transposed to the following layout:
+///      n,iY,bY,iX,bX,oC
 ///
 /// This operation is useful for resizing the activations between convolutions
 /// (but keeping all data), e.g. instead of pooling. It is also useful for training
 /// purely convolutional models.
 ///
-/// For example, given this input of shape `[1, 1, 1, 4]`, and a block size of 2:
+/// For example, given an input of shape `[1, 1, 1, 4]`, data_format = "NHWC" and
+/// block_size = 2:
 ///
 /// ```
 /// x = [[[[1, 2, 3, 4]]]]
@@ -449,10 +482,10 @@ class DebugGradientIdentity {
 /// the operator will return the following tensor of shape `[1 4 4 1]`:
 ///
 /// ```
-/// x = [[ [1],   [2],  [5],  [6]],
-///      [ [3],   [4],  [7],  [8]],
-///      [ [9],  [10], [13],  [14]],
-///      [ [11], [12], [15],  [16]]]
+/// x = [[[ [1],   [2],  [5],  [6]],
+///       [ [3],   [4],  [7],  [8]],
+///       [ [9],  [10], [13],  [14]],
+///       [ [11], [12], [15],  [16]]]]
 ///
 /// ```
 ///
@@ -464,11 +497,28 @@ class DebugGradientIdentity {
 /// * `Output`: The output tensor.
 class DepthToSpace {
  public:
+  /// Optional attribute setters for DepthToSpace
+  struct Attrs {
+    /// Defaults to "NHWC"
+    Attrs DataFormat(StringPiece x) {
+      Attrs ret = *this;
+      ret.data_format_ = x;
+      return ret;
+    }
+
+    StringPiece data_format_ = "NHWC";
+  };
   DepthToSpace(const ::tensorflow::Scope& scope, ::tensorflow::Input input, int64
              block_size);
+  DepthToSpace(const ::tensorflow::Scope& scope, ::tensorflow::Input input, int64
+             block_size, const DepthToSpace::Attrs& attrs);
   operator ::tensorflow::Output() const { return output; }
   operator ::tensorflow::Input() const { return output; }
   ::tensorflow::Node* node() const { return output.node(); }
+
+  static Attrs DataFormat(StringPiece x) {
+    return Attrs().DataFormat(x);
+  }
 
   ::tensorflow::Output output;
 };
@@ -500,12 +550,53 @@ class DepthToSpace {
 /// If the mode is 'MIN_FIRST', then this approach is used:
 ///
 /// ```c++
-/// number_of_steps = 1 << (# of bits in T)
-/// range_adjust = number_of_steps / (number_of_steps - 1)
+/// num_discrete_values = 1 << (# of bits in T)
+/// range_adjust = num_discrete_values / (num_discrete_values - 1)
 /// range = (range_max - range_min) * range_adjust
-/// range_scale = range / number_of_steps
+/// range_scale = range / num_discrete_values
 /// const double offset_input = static_cast<double>(input) - lowest_quantized;
 /// result = range_min + ((input - numeric_limits<T>::min()) * range_scale)
+/// ```
+///
+/// *SCALED mode Example*
+///
+/// `SCALED` mode matches the quantization approach used in
+/// `QuantizeAndDequantize{V2|V3}`.
+///
+/// If the mode is `SCALED`, we do not use the full range of the output type,
+/// choosing to elide the lowest possible value for symmetry (e.g., output range is
+/// -127 to 127, not -128 to 127 for signed 8 bit quantization), so that 0.0 maps to
+/// 0.
+///
+/// We first find the range of values in our tensor. The
+/// range we use is always centered on 0, so we find m such that
+/// ```c++
+///   m = max(abs(input_min), abs(input_max))
+/// ```
+///
+/// Our input tensor range is then `[-m, m]`.
+///
+/// Next, we choose our fixed-point quantization buckets, `[min_fixed, max_fixed]`.
+/// If T is signed, this is
+/// ```
+///   num_bits = sizeof(T) * 8
+///   [min_fixed, max_fixed] =
+///       [-(1 << (num_bits - 1) - 1), (1 << (num_bits - 1)) - 1]
+/// ```
+///
+/// Otherwise, if T is unsigned, the fixed-point range is
+/// ```
+///   [min_fixed, max_fixed] = [0, (1 << num_bits) - 1]
+/// ```
+///
+/// From this we compute our scaling factor, s:
+/// ```c++
+///   s = (2 * m) / (max_fixed - min_fixed)
+/// ```
+///
+/// Now we can dequantize the elements of our tensor:
+/// ```c++
+/// result = input * s
 /// ```
 ///
 /// Arguments:
@@ -566,7 +657,7 @@ class Dequantize {
 ///
 /// Arguments:
 /// * scope: A Scope object
-/// * diagonal: Rank k tensor where k is at most 3.
+/// * diagonal: Rank k tensor where k is at most 1.
 ///
 /// Returns:
 /// * `Output`: The output tensor.
@@ -603,7 +694,7 @@ class Diag {
 ///
 /// Arguments:
 /// * scope: A Scope object
-/// * input: Rank k tensor where k is 2, 4, or 6.
+/// * input: Rank k tensor where k is even and not zero.
 ///
 /// Returns:
 /// * `Output`: The extracted diagonal.
@@ -750,7 +841,8 @@ class EditDistance {
 /// Arguments:
 /// * scope: A Scope object
 /// * axis: 0-D (scalar). Specifies the dimension index at which to
-/// expand the shape of `input`.
+/// expand the shape of `input`. Must be in the range
+/// `[-rank(input) - 1, rank(input)]`.
 ///
 /// Returns:
 /// * `Output`: Contains the same data as `input`, but its shape has an additional
@@ -1480,6 +1572,30 @@ class GatherV2 {
   ::tensorflow::Output output;
 };
 
+/// Gives a guarantee to the TF runtime that the input tensor is a constant.
+///
+/// The runtime is then free to make optimizations based on this.
+///
+/// Only accepts value typed tensors as inputs and rejects resource variable handles
+/// as input.
+///
+/// Returns the input tensor without modification.
+///
+/// Arguments:
+/// * scope: A Scope object
+///
+/// Returns:
+/// * `Output`: The output tensor.
+class GuaranteeConst {
+ public:
+  GuaranteeConst(const ::tensorflow::Scope& scope, ::tensorflow::Input input);
+  operator ::tensorflow::Output() const { return output; }
+  operator ::tensorflow::Input() const { return output; }
+  ::tensorflow::Node* node() const { return output.node(); }
+
+  ::tensorflow::Output output;
+};
+
 /// Return a tensor with the same shape and contents as the input tensor or value.
 ///
 /// Arguments:
@@ -1495,6 +1611,38 @@ class Identity {
   ::tensorflow::Node* node() const { return output.node(); }
 
   ::tensorflow::Output output;
+};
+
+/// Returns a list of tensors with the same shapes and contents as the input
+///
+/// tensors.
+///
+/// This op can be used to override the gradient for complicated functions. For
+/// example, suppose y = f(x) and we wish to apply a custom function g for backprop
+/// such that dx = g(dy). In Python,
+///
+/// ```python
+/// with tf.get_default_graph().gradient_override_map(
+///     {'IdentityN': 'OverrideGradientWithG'}):
+///   y, _ = identity_n([f(x), x])
+///
+/// @tf.RegisterGradient('OverrideGradientWithG')
+/// def ApplyG(op, dy, _):
+///   return [None, g(dy)]  # Do not backprop to f(x).
+/// ```
+///
+/// Arguments:
+/// * scope: A Scope object
+///
+/// Returns:
+/// * `OutputList`: The output tensor.
+class IdentityN {
+ public:
+  IdentityN(const ::tensorflow::Scope& scope, ::tensorflow::InputList input);
+  ::tensorflow::Output operator[](size_t index) const { return output[index]; }
+
+
+  ::tensorflow::OutputList output;
 };
 
 /// Returns immutable tensor from memory region.
@@ -2491,7 +2639,9 @@ class QuantizeAndDequantizeV3 {
 ///
 /// [min_range, max_range] are scalar floats that specify the range for
 /// the 'input' data. The 'mode' attribute controls exactly which calculations are
-/// used to convert the float values to their quantized equivalents.
+/// used to convert the float values to their quantized equivalents.  The
+/// 'round_mode' attribute controls which rounding tie-breaking algorithm is used
+/// when rounding float values to their quantized equivalents.
 ///
 /// In 'MIN_COMBINED' mode, each value of the tensor will undergo the following:
 ///
@@ -2515,10 +2665,10 @@ class QuantizeAndDequantizeV3 {
 /// If the mode is 'MIN_FIRST', then this approach is used:
 ///
 /// ```
-/// number_of_steps = 1 << (# of bits in T)
-/// range_adjust = number_of_steps / (number_of_steps - 1)
+/// num_discrete_values = 1 << (# of bits in T)
+/// range_adjust = num_discrete_values / (num_discrete_values - 1)
 /// range = (range_max - range_min) * range_adjust
-/// range_scale = number_of_steps / range
+/// range_scale = num_discrete_values / range
 /// quantized = round(input * range_scale) - round(range_min * range_scale) +
 ///   numeric_limits<T>::min()
 /// quantized = max(quantized, numeric_limits<T>::min())
@@ -2529,6 +2679,47 @@ class QuantizeAndDequantizeV3 {
 /// is rounded first, before it's subtracted from the rounded value. With
 /// MIN_COMBINED, a small bias is introduced where repeated iterations of quantizing
 /// and dequantizing will introduce a larger and larger error.
+///
+/// *SCALED mode Example*
+///
+/// `SCALED` mode matches the quantization approach used in
+/// `QuantizeAndDequantize{V2|V3}`.
+///
+/// If the mode is `SCALED`, we do not use the full range of the output type,
+/// choosing to elide the lowest possible value for symmetry (e.g., output range is
+/// -127 to 127, not -128 to 127 for signed 8 bit quantization), so that 0.0 maps to
+/// 0.
+///
+/// We first find the range of values in our tensor. The
+/// range we use is always centered on 0, so we find m such that
+/// ```c++
+///   m = max(abs(input_min), abs(input_max))
+/// ```
+///
+/// Our input tensor range is then `[-m, m]`.
+///
+/// Next, we choose our fixed-point quantization buckets, `[min_fixed, max_fixed]`.
+/// If T is signed, this is
+/// ```
+///   num_bits = sizeof(T) * 8
+///   [min_fixed, max_fixed] =
+///       [-(1 << (num_bits - 1) - 1), (1 << (num_bits - 1)) - 1]
+/// ```
+///
+/// Otherwise, if T is unsigned, the fixed-point range is
+/// ```
+///   [min_fixed, max_fixed] = [0, (1 << num_bits) - 1]
+/// ```
+///
+/// From this we compute our scaling factor, s:
+/// ```c++
+///   s = (max_fixed - min_fixed) / (2 * m)
+/// ```
+///
+/// Now we can quantize the elements of our tensor:
+/// ```c++
+/// result = round(input * s)
+/// ```
 ///
 /// One thing to watch out for is that the operator may choose to adjust the
 /// requested minimum and maximum values slightly during the quantization process,
@@ -2559,7 +2750,15 @@ class QuantizeV2 {
       return ret;
     }
 
+    /// Defaults to "HALF_AWAY_FROM_ZERO"
+    Attrs RoundMode(StringPiece x) {
+      Attrs ret = *this;
+      ret.round_mode_ = x;
+      return ret;
+    }
+
     StringPiece mode_ = "MIN_COMBINED";
+    StringPiece round_mode_ = "HALF_AWAY_FROM_ZERO";
   };
   QuantizeV2(const ::tensorflow::Scope& scope, ::tensorflow::Input input,
            ::tensorflow::Input min_range, ::tensorflow::Input max_range,
@@ -2570,6 +2769,9 @@ class QuantizeV2 {
 
   static Attrs Mode(StringPiece x) {
     return Attrs().Mode(x);
+  }
+  static Attrs RoundMode(StringPiece x) {
+    return Attrs().RoundMode(x);
   }
 
   ::tensorflow::Output output;
@@ -3056,7 +3258,7 @@ class ReverseSequence {
 /// #                  [20, 21, 22, 23]]]]
 /// # tensor 't' shape is [1, 2, 3, 4]
 ///
-/// # 'dims' is [3] or 'dims' is -1
+/// # 'dims' is [3] or 'dims' is [-1]
 /// reverse(t, dims) ==> [[[[ 3,  2,  1,  0],
 ///                         [ 7,  6,  5,  4],
 ///                         [ 11, 10, 9, 8]],
@@ -3084,7 +3286,8 @@ class ReverseSequence {
 /// Arguments:
 /// * scope: A Scope object
 /// * tensor: Up to 8-D.
-/// * axis: 1-D. The indices of the dimensions to reverse.
+/// * axis: 1-D. The indices of the dimensions to reverse. Must be in the range
+/// `[-rank(tensor), rank(tensor))`.
 ///
 /// Returns:
 /// * `Output`: The same shape as `tensor`.
@@ -3662,26 +3865,38 @@ class SpaceToBatchND {
 /// Rearranges blocks of spatial data, into depth. More specifically,
 /// this op outputs a copy of the input tensor where values from the `height`
 /// and `width` dimensions are moved to the `depth` dimension.
-/// The attr `block_size` indicates the input block size and how the data is moved.
+/// The attr `block_size` indicates the input block size.
 ///
 ///   * Non-overlapping blocks of size `block_size x block size` are rearranged
 ///     into depth at each location.
-///   * The depth of the output tensor is `input_depth * block_size * block_size`.
+///   * The depth of the output tensor is `block_size * block_size * input_depth`.
+///   * The Y, X coordinates within each block of the input become the high order
+///     component of the output channel index.
 ///   * The input tensor's height and width must be divisible by block_size.
 ///
-/// That is, assuming the input is in the shape:
-/// `[batch, height, width, depth]`,
-/// the shape of the output will be:
-/// `[batch, height/block_size, width/block_size, depth*block_size*block_size]`
+/// The `data_format` attr specifies the layout of the input and output tensors
+/// with the following options:
+///   "NHWC": `[ batch, height, width, channels ]`
+///   "NCHW": `[ batch, channels, height, width ]`
+///   "NCHW_VECT_C":
+///       `qint8 [ batch, channels / 4, height, width, 4 ]`
 ///
-/// This operation requires that the input tensor be of rank 4, and that
-/// `block_size` be >=1 and a divisor of both the input `height` and `width`.
+/// It is useful to consider the operation as transforming a 6-D Tensor.
+/// e.g. for data_format = NHWC,
+///      Each element in the input tensor can be specified via 6 coordinates,
+///      ordered by decreasing memory layout significance as:
+///      n,oY,bY,oX,bX,iC  (where n=batch index, oX, oY means X or Y coordinates
+///                         within the output image, bX, bY means coordinates
+///                         within the input block, iC means input channels).
+///      The output would be a transpose to the following layout:
+///      n,oY,oX,bY,bX,iC
 ///
 /// This operation is useful for resizing the activations between convolutions
 /// (but keeping all data), e.g. instead of pooling. It is also useful for training
 /// purely convolutional models.
 ///
-/// For example, given this input of shape `[1, 2, 2, 1]`, and block_size of 2:
+/// For example, given an input of shape `[1, 2, 2, 1]`, data_format = "NHWC" and
+/// block_size = 2:
 ///
 /// ```
 /// x = [[[[1], [2]],
@@ -3739,11 +3954,28 @@ class SpaceToBatchND {
 /// * `Output`: The output tensor.
 class SpaceToDepth {
  public:
+  /// Optional attribute setters for SpaceToDepth
+  struct Attrs {
+    /// Defaults to "NHWC"
+    Attrs DataFormat(StringPiece x) {
+      Attrs ret = *this;
+      ret.data_format_ = x;
+      return ret;
+    }
+
+    StringPiece data_format_ = "NHWC";
+  };
   SpaceToDepth(const ::tensorflow::Scope& scope, ::tensorflow::Input input, int64
              block_size);
+  SpaceToDepth(const ::tensorflow::Scope& scope, ::tensorflow::Input input, int64
+             block_size, const SpaceToDepth::Attrs& attrs);
   operator ::tensorflow::Output() const { return output; }
   operator ::tensorflow::Input() const { return output; }
   ::tensorflow::Node* node() const { return output.node(); }
+
+  static Attrs DataFormat(StringPiece x) {
+    return Attrs().DataFormat(x);
+  }
 
   ::tensorflow::Output output;
 };
@@ -3803,7 +4035,7 @@ class SplitV {
 /// Given a tensor `input`, this operation returns a tensor of the same type with
 /// all dimensions of size 1 removed. If you don't want to remove all size 1
 /// dimensions, you can remove specific size 1 dimensions by specifying
-/// `squeeze_dims`.
+/// `axis`.
 ///
 /// For example:
 ///
@@ -3824,8 +4056,9 @@ class SplitV {
 /// * input: The `input` to squeeze.
 ///
 /// Optional attributes (see `Attrs`):
-/// * squeeze_dims: If specified, only squeezes the dimensions listed. The dimension
-/// index starts at 0. It is an error to squeeze a dimension that is not 1.
+/// * axis: If specified, only squeezes the dimensions listed. The dimension
+/// index starts at 0. It is an error to squeeze a dimension that is not 1. Must
+/// be in the range `[-rank(input), rank(input))`.
 ///
 /// Returns:
 /// * `Output`: Contains the same data as `input`, but has one or more dimensions of
@@ -3835,16 +4068,17 @@ class Squeeze {
   /// Optional attribute setters for Squeeze
   struct Attrs {
     /// If specified, only squeezes the dimensions listed. The dimension
-    /// index starts at 0. It is an error to squeeze a dimension that is not 1.
+    /// index starts at 0. It is an error to squeeze a dimension that is not 1. Must
+    /// be in the range `[-rank(input), rank(input))`.
     ///
     /// Defaults to []
-    Attrs SqueezeDims(const gtl::ArraySlice<int>& x) {
+    Attrs Axis(const gtl::ArraySlice<int>& x) {
       Attrs ret = *this;
-      ret.squeeze_dims_ = x;
+      ret.axis_ = x;
       return ret;
     }
 
-    gtl::ArraySlice<int> squeeze_dims_ = {};
+    gtl::ArraySlice<int> axis_ = {};
   };
   Squeeze(const ::tensorflow::Scope& scope, ::tensorflow::Input input);
   Squeeze(const ::tensorflow::Scope& scope, ::tensorflow::Input input, const
@@ -3853,8 +4087,8 @@ class Squeeze {
   operator ::tensorflow::Input() const { return output; }
   ::tensorflow::Node* node() const { return output.node(); }
 
-  static Attrs SqueezeDims(const gtl::ArraySlice<int>& x) {
-    return Attrs().SqueezeDims(x);
+  static Attrs Axis(const gtl::ArraySlice<int>& x) {
+    return Attrs().Axis(x);
   }
 
   ::tensorflow::Output output;
@@ -4409,6 +4643,60 @@ class Unique {
 /// This operation returns a tensor `y` containing all of the unique elements of `x`
 /// sorted in the same order that they occur in `x`. This operation also returns a
 /// tensor `idx` the same size as `x` that contains the index of each value of `x`
+/// in the unique output `y`. In other words:
+///
+/// `y[idx[i]] = x[i] for i in [0, 1,...,rank(x) - 1]`
+///
+/// For example:
+///
+/// ```
+/// # tensor 'x' is [1, 1, 2, 4, 4, 4, 7, 8, 8]
+/// y, idx = unique(x)
+/// y ==> [1, 2, 4, 7, 8]
+/// idx ==> [0, 0, 1, 2, 2, 2, 3, 4, 4]
+/// ```
+///
+/// Arguments:
+/// * scope: A Scope object
+/// * x: A `Tensor`.
+/// * axis: A `Tensor` of type `int64` (default: 0). The axis of the Tensor to
+/// find the unique elements.
+///
+/// Returns:
+/// * `Output` y: A `Tensor`. Unique elements along the `axis` of `Tensor` x.
+/// * `Output` idx: A 1-D Tensor. Has the same type as x that contains the index of each
+/// value of x in the output y.
+class UniqueV2 {
+ public:
+  /// Optional attribute setters for UniqueV2
+  struct Attrs {
+    /// Defaults to DT_INT32
+    Attrs OutIdx(DataType x) {
+      Attrs ret = *this;
+      ret.out_idx_ = x;
+      return ret;
+    }
+
+    DataType out_idx_ = DT_INT32;
+  };
+  UniqueV2(const ::tensorflow::Scope& scope, ::tensorflow::Input x,
+         ::tensorflow::Input axis);
+  UniqueV2(const ::tensorflow::Scope& scope, ::tensorflow::Input x,
+         ::tensorflow::Input axis, const UniqueV2::Attrs& attrs);
+
+  static Attrs OutIdx(DataType x) {
+    return Attrs().OutIdx(x);
+  }
+
+  ::tensorflow::Output y;
+  ::tensorflow::Output idx;
+};
+
+/// Finds unique elements in a 1-D tensor.
+///
+/// This operation returns a tensor `y` containing all of the unique elements of `x`
+/// sorted in the same order that they occur in `x`. This operation also returns a
+/// tensor `idx` the same size as `x` that contains the index of each value of `x`
 /// in the unique output `y`. Finally, it returns a third tensor `count` that
 /// contains the count of each element of `y` in `x`. In other words:
 ///
@@ -4512,7 +4800,7 @@ class Unstack {
   ::tensorflow::OutputList output;
 };
 
-/// Returns locations of true values in a boolean tensor.
+/// Returns locations of nonzero / true values in a tensor.
 ///
 /// This operation returns the coordinates of true elements in `condition`. The
 /// coordinates are returned in a 2-D tensor where the first dimension (rows)
@@ -4538,6 +4826,34 @@ class Unstack {
 /// #                    [[False, False]
 /// #                     [False, True]]]
 /// # 'input' has 5 true values, so output has 5 coordinates.
+/// # 'input' has rank of 3, so coordinates have three indices.
+/// where(input) ==> [[0, 0, 0],
+///                   [0, 1, 0],
+///                   [1, 0, 1],
+///                   [1, 1, 1],
+///                   [2, 1, 1]]
+///
+/// # `condition` tensor is [[[1.5,  0.0]
+/// #                     [-0.5, 0.0]]
+/// #                    [[0.0,  0.25]
+/// #                     [0.0,  0.75]]
+/// #                    [[0.0,  0.0]
+/// #                     [0.0,  0.01]]]
+/// # 'input' has 5 nonzero values, so output has 5 coordinates.
+/// # 'input' has rank of 3, so coordinates have three indices.
+/// where(input) ==> [[0, 0, 0],
+///                   [0, 1, 0],
+///                   [1, 0, 1],
+///                   [1, 1, 1],
+///                   [2, 1, 1]]
+///
+/// # `condition` tensor is [[[1.5 + 0.0j, 0.0  + 0.0j]
+/// #                     [0.0 + 0.5j, 0.0  + 0.0j]]
+/// #                    [[0.0 + 0.0j, 0.25 + 1.5j]
+/// #                     [0.0 + 0.0j, 0.75 + 0.0j]]
+/// #                    [[0.0 + 0.0j, 0.0  + 0.0j]
+/// #                     [0.0 + 0.0j, 0.01 + 0.0j]]]
+/// # 'input' has 5 nonzero magnitude values, so output has 5 coordinates.
 /// # 'input' has rank of 3, so coordinates have three indices.
 /// where(input) ==> [[0, 0, 0],
 ///                   [0, 1, 0],

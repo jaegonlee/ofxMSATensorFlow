@@ -111,7 +111,10 @@ class AdjustSaturation {
 /// Returns a tensor with `crops` from the input `image` at positions defined at the
 /// bounding box locations in `boxes`. The cropped boxes are all resized (with
 /// bilinear interpolation) to a fixed `size = [crop_height, crop_width]`. The
-/// result is a 4-D tensor `[num_boxes, crop_height, crop_width, depth]`.
+/// result is a 4-D tensor `[num_boxes, crop_height, crop_width, depth]`. The
+/// resizing is corner aligned. In particular, if `boxes = [[0, 0, 1, 1]]`, the
+/// method will give identical results to using `tf.image.resize_bilinear()`
+/// with `align_corners=True`.
 ///
 /// Arguments:
 /// * scope: A Scope object
@@ -308,6 +311,153 @@ class CropAndResizeGradImage {
   ::tensorflow::Output output;
 };
 
+/// Decode and Crop a JPEG-encoded image to a uint8 tensor.
+///
+/// The attr `channels` indicates the desired number of color channels for the
+/// decoded image.
+///
+/// Accepted values are:
+///
+/// *   0: Use the number of channels in the JPEG-encoded image.
+/// *   1: output a grayscale image.
+/// *   3: output an RGB image.
+///
+/// If needed, the JPEG-encoded image is transformed to match the requested number
+/// of color channels.
+///
+/// The attr `ratio` allows downscaling the image by an integer factor during
+/// decoding.  Allowed values are: 1, 2, 4, and 8.  This is much faster than
+/// downscaling the image later.
+///
+///
+/// It is equivalent to a combination of decode and crop, but much faster by only
+/// decoding partial jpeg image.
+///
+/// Arguments:
+/// * scope: A Scope object
+/// * contents: 0-D.  The JPEG-encoded image.
+/// * crop_window: 1-D.  The crop window: [crop_y, crop_x, crop_height, crop_width].
+///
+/// Optional attributes (see `Attrs`):
+/// * channels: Number of color channels for the decoded image.
+/// * ratio: Downscaling ratio.
+/// * fancy_upscaling: If true use a slower but nicer upscaling of the
+/// chroma planes (yuv420/422 only).
+/// * try_recover_truncated: If true try to recover an image from truncated input.
+/// * acceptable_fraction: The minimum required fraction of lines before a truncated
+/// input is accepted.
+/// * dct_method: string specifying a hint about the algorithm used for
+/// decompression.  Defaults to "" which maps to a system-specific
+/// default.  Currently valid values are ["INTEGER_FAST",
+/// "INTEGER_ACCURATE"].  The hint may be ignored (e.g., the internal
+/// jpeg library changes to a version that does not have that specific
+/// option.)
+///
+/// Returns:
+/// * `Output`: 3-D with shape `[height, width, channels]`..
+class DecodeAndCropJpeg {
+ public:
+  /// Optional attribute setters for DecodeAndCropJpeg
+  struct Attrs {
+    /// Number of color channels for the decoded image.
+    ///
+    /// Defaults to 0
+    Attrs Channels(int64 x) {
+      Attrs ret = *this;
+      ret.channels_ = x;
+      return ret;
+    }
+
+    /// Downscaling ratio.
+    ///
+    /// Defaults to 1
+    Attrs Ratio(int64 x) {
+      Attrs ret = *this;
+      ret.ratio_ = x;
+      return ret;
+    }
+
+    /// If true use a slower but nicer upscaling of the
+    /// chroma planes (yuv420/422 only).
+    ///
+    /// Defaults to true
+    Attrs FancyUpscaling(bool x) {
+      Attrs ret = *this;
+      ret.fancy_upscaling_ = x;
+      return ret;
+    }
+
+    /// If true try to recover an image from truncated input.
+    ///
+    /// Defaults to false
+    Attrs TryRecoverTruncated(bool x) {
+      Attrs ret = *this;
+      ret.try_recover_truncated_ = x;
+      return ret;
+    }
+
+    /// The minimum required fraction of lines before a truncated
+    /// input is accepted.
+    ///
+    /// Defaults to 1
+    Attrs AcceptableFraction(float x) {
+      Attrs ret = *this;
+      ret.acceptable_fraction_ = x;
+      return ret;
+    }
+
+    /// string specifying a hint about the algorithm used for
+    /// decompression.  Defaults to "" which maps to a system-specific
+    /// default.  Currently valid values are ["INTEGER_FAST",
+    /// "INTEGER_ACCURATE"].  The hint may be ignored (e.g., the internal
+    /// jpeg library changes to a version that does not have that specific
+    /// option.)
+    ///
+    /// Defaults to ""
+    Attrs DctMethod(StringPiece x) {
+      Attrs ret = *this;
+      ret.dct_method_ = x;
+      return ret;
+    }
+
+    int64 channels_ = 0;
+    int64 ratio_ = 1;
+    bool fancy_upscaling_ = true;
+    bool try_recover_truncated_ = false;
+    float acceptable_fraction_ = 1.0f;
+    StringPiece dct_method_ = "";
+  };
+  DecodeAndCropJpeg(const ::tensorflow::Scope& scope, ::tensorflow::Input
+                  contents, ::tensorflow::Input crop_window);
+  DecodeAndCropJpeg(const ::tensorflow::Scope& scope, ::tensorflow::Input
+                  contents, ::tensorflow::Input crop_window, const
+                  DecodeAndCropJpeg::Attrs& attrs);
+  operator ::tensorflow::Output() const { return image; }
+  operator ::tensorflow::Input() const { return image; }
+  ::tensorflow::Node* node() const { return image.node(); }
+
+  static Attrs Channels(int64 x) {
+    return Attrs().Channels(x);
+  }
+  static Attrs Ratio(int64 x) {
+    return Attrs().Ratio(x);
+  }
+  static Attrs FancyUpscaling(bool x) {
+    return Attrs().FancyUpscaling(x);
+  }
+  static Attrs TryRecoverTruncated(bool x) {
+    return Attrs().TryRecoverTruncated(x);
+  }
+  static Attrs AcceptableFraction(float x) {
+    return Attrs().AcceptableFraction(x);
+  }
+  static Attrs DctMethod(StringPiece x) {
+    return Attrs().DctMethod(x);
+  }
+
+  ::tensorflow::Output image;
+};
+
 /// Decode the first frame of a BMP-encoded image to a uint8 tensor.
 ///
 /// The attr `channels` indicates the desired number of color channels for the
@@ -395,6 +545,7 @@ class DecodeGif {
 /// The attr `ratio` allows downscaling the image by an integer factor during
 /// decoding.  Allowed values are: 1, 2, 4, and 8.  This is much faster than
 /// downscaling the image later.
+///
 ///
 /// This op also supports decoding PNGs and non-animated GIFs since the interface is
 /// the same, though it is cleaner to use `tf.image.decode_image`.
@@ -596,9 +747,9 @@ class DecodePng {
 /// bounding box coordinates are floats in `[0.0, 1.0]` relative to the width and
 /// height of the underlying image.
 ///
-/// For example, if an image is 100 x 200 pixels and the bounding box is
-/// `[0.1, 0.2, 0.5, 0.9]`, the bottom-left and upper-right coordinates of the
-/// bounding box will be `(10, 40)` to `(50, 180)`.
+/// For example, if an image is 100 x 200 pixels (height x width) and the bounding
+/// box is `[0.1, 0.2, 0.5, 0.9]`, the upper-left and bottom-right coordinates of
+/// the bounding box will be `(40, 10)` to `(100, 50)` (in (x,y) coordinates).
 ///
 /// Parts of the bounding box may fall outside the image.
 ///
@@ -951,6 +1102,51 @@ class ExtractGlimpse {
   ::tensorflow::Output glimpse;
 };
 
+/// Extract the shape information of a JPEG-encoded image.
+///
+/// This op only parses the image header, so it is much faster than DecodeJpeg.
+///
+/// Arguments:
+/// * scope: A Scope object
+/// * contents: 0-D. The JPEG-encoded image.
+///
+/// Optional attributes (see `Attrs`):
+/// * output_type: (Optional) The output type of the operation (int32 or int64).
+/// Defaults to int32.
+///
+/// Returns:
+/// * `Output`: 1-D. The image shape with format [height, width, channels].
+class ExtractJpegShape {
+ public:
+  /// Optional attribute setters for ExtractJpegShape
+  struct Attrs {
+    /// (Optional) The output type of the operation (int32 or int64).
+    /// Defaults to int32.
+    ///
+    /// Defaults to DT_INT32
+    Attrs OutputType(DataType x) {
+      Attrs ret = *this;
+      ret.output_type_ = x;
+      return ret;
+    }
+
+    DataType output_type_ = DT_INT32;
+  };
+  ExtractJpegShape(const ::tensorflow::Scope& scope, ::tensorflow::Input
+                 contents);
+  ExtractJpegShape(const ::tensorflow::Scope& scope, ::tensorflow::Input
+                 contents, const ExtractJpegShape::Attrs& attrs);
+  operator ::tensorflow::Output() const { return image_shape; }
+  operator ::tensorflow::Input() const { return image_shape; }
+  ::tensorflow::Node* node() const { return image_shape.node(); }
+
+  static Attrs OutputType(DataType x) {
+    return Attrs().OutputType(x);
+  }
+
+  ::tensorflow::Output image_shape;
+};
+
 /// Convert one or more images from HSV to RGB.
 ///
 /// Outputs a tensor of the same shape as the `images` tensor, containing the RGB
@@ -1171,6 +1367,11 @@ class RGBToHSV {
 /// Resize `images` to `size` using area interpolation.
 ///
 /// Input images can be of different types but output images are always float.
+///
+/// Each output pixel is computed by first transforming the pixel's footprint into
+/// the input tensor and then averaging the pixels that intersect the footprint. An
+/// input pixel's contribution to the average is weighted by the fraction of its
+/// area that intersects the footprint.  This is the same as OpenCV's INTER_AREA.
 ///
 /// Arguments:
 /// * scope: A Scope object

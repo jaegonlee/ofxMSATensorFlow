@@ -36,6 +36,7 @@ namespace ops {
 /// * use_quote_delim: If false, treats double quotation marks as regular
 /// characters inside of the string fields (ignoring RFC 4180, Section 2,
 /// Bullet 5).
+/// * na_value: Additional string to recognize as NA/NaN.
 ///
 /// Returns:
 /// * `OutputList`: Each tensor will have the same shape as records.
@@ -63,8 +64,18 @@ class DecodeCSV {
       return ret;
     }
 
+    /// Additional string to recognize as NA/NaN.
+    ///
+    /// Defaults to ""
+    Attrs NaValue(StringPiece x) {
+      Attrs ret = *this;
+      ret.na_value_ = x;
+      return ret;
+    }
+
     StringPiece field_delim_ = ",";
     bool use_quote_delim_ = true;
+    StringPiece na_value_ = "";
   };
   DecodeCSV(const ::tensorflow::Scope& scope, ::tensorflow::Input records,
           ::tensorflow::InputList record_defaults);
@@ -79,6 +90,9 @@ class DecodeCSV {
   }
   static Attrs UseQuoteDelim(bool x) {
     return Attrs().UseQuoteDelim(x);
+  }
+  static Attrs NaValue(StringPiece x) {
+    return Attrs().NaValue(x);
   }
 
   ::tensorflow::OutputList output;
@@ -418,6 +432,24 @@ class ParseTensor {
   ::tensorflow::Node* node() const { return output.node(); }
 
   ::tensorflow::Output output;
+};
+
+/// Transforms a Tensor into a serialized TensorProto proto.
+///
+/// Arguments:
+/// * scope: A Scope object
+/// * tensor: A Tensor of type `T`.
+///
+/// Returns:
+/// * `Output`: A serialized TensorProto proto of the input tensor.
+class SerializeTensor {
+ public:
+  SerializeTensor(const ::tensorflow::Scope& scope, ::tensorflow::Input tensor);
+  operator ::tensorflow::Output() const { return serialized; }
+  operator ::tensorflow::Input() const { return serialized; }
+  ::tensorflow::Node* node() const { return serialized.node(); }
+
+  ::tensorflow::Output serialized;
 };
 
 /// Converts each string in the input Tensor to the specified numeric type.

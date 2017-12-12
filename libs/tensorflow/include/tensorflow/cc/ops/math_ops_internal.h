@@ -33,8 +33,8 @@ namespace internal {
 /// * `Output`: The z tensor.
 class ReciprocalGrad {
  public:
-  ReciprocalGrad(const ::tensorflow::Scope& scope, ::tensorflow::Input x,
-               ::tensorflow::Input y);
+  ReciprocalGrad(const ::tensorflow::Scope& scope, ::tensorflow::Input y,
+               ::tensorflow::Input dy);
   operator ::tensorflow::Output() const { return z; }
   operator ::tensorflow::Input() const { return z; }
   ::tensorflow::Node* node() const { return z.node(); }
@@ -54,8 +54,8 @@ class ReciprocalGrad {
 /// * `Output`: The z tensor.
 class RsqrtGrad {
  public:
-  RsqrtGrad(const ::tensorflow::Scope& scope, ::tensorflow::Input x,
-          ::tensorflow::Input y);
+  RsqrtGrad(const ::tensorflow::Scope& scope, ::tensorflow::Input y,
+          ::tensorflow::Input dy);
   operator ::tensorflow::Output() const { return z; }
   operator ::tensorflow::Input() const { return z; }
   ::tensorflow::Node* node() const { return z.node(); }
@@ -75,8 +75,8 @@ class RsqrtGrad {
 /// * `Output`: The z tensor.
 class SigmoidGrad {
  public:
-  SigmoidGrad(const ::tensorflow::Scope& scope, ::tensorflow::Input x,
-            ::tensorflow::Input y);
+  SigmoidGrad(const ::tensorflow::Scope& scope, ::tensorflow::Input y,
+            ::tensorflow::Input dy);
   operator ::tensorflow::Output() const { return z; }
   operator ::tensorflow::Input() const { return z; }
   ::tensorflow::Node* node() const { return z.node(); }
@@ -96,8 +96,8 @@ class SigmoidGrad {
 /// * `Output`: The z tensor.
 class SqrtGrad {
  public:
-  SqrtGrad(const ::tensorflow::Scope& scope, ::tensorflow::Input x,
-         ::tensorflow::Input y);
+  SqrtGrad(const ::tensorflow::Scope& scope, ::tensorflow::Input y,
+         ::tensorflow::Input dy);
   operator ::tensorflow::Output() const { return z; }
   operator ::tensorflow::Input() const { return z; }
   ::tensorflow::Node* node() const { return z.node(); }
@@ -117,8 +117,8 @@ class SqrtGrad {
 /// * `Output`: The z tensor.
 class TanhGrad {
  public:
-  TanhGrad(const ::tensorflow::Scope& scope, ::tensorflow::Input x,
-         ::tensorflow::Input y);
+  TanhGrad(const ::tensorflow::Scope& scope, ::tensorflow::Input y,
+         ::tensorflow::Input dy);
   operator ::tensorflow::Output() const { return z; }
   operator ::tensorflow::Input() const { return z; }
   ::tensorflow::Node* node() const { return z.node(); }

@@ -57,8 +57,16 @@ class Multinomial {
       return ret;
     }
 
+    /// Defaults to DT_INT64
+    Attrs OutputDtype(DataType x) {
+      Attrs ret = *this;
+      ret.output_dtype_ = x;
+      return ret;
+    }
+
     int64 seed_ = 0;
     int64 seed2_ = 0;
+    DataType output_dtype_ = DT_INT64;
   };
   Multinomial(const ::tensorflow::Scope& scope, ::tensorflow::Input logits,
             ::tensorflow::Input num_samples);
@@ -73,6 +81,9 @@ class Multinomial {
   }
   static Attrs Seed2(int64 x) {
     return Attrs().Seed2(x);
+  }
+  static Attrs OutputDtype(DataType x) {
+    return Attrs().OutputDtype(x);
   }
 
   ::tensorflow::Output output;
@@ -221,6 +232,54 @@ class RandomGamma {
   ::tensorflow::Output output;
 };
 
+/// Use RandomPoissonV2 instead.
+/// DEPRECATED at GraphDef version 25:
+/// Replaced by RandomPoissonV2.
+///
+/// Arguments:
+/// * scope: A Scope object
+///
+/// Returns:
+/// * `Output`: The output tensor.
+class RandomPoisson {
+ public:
+  /// Optional attribute setters for RandomPoisson
+  struct Attrs {
+    /// Defaults to 0
+    Attrs Seed(int64 x) {
+      Attrs ret = *this;
+      ret.seed_ = x;
+      return ret;
+    }
+
+    /// Defaults to 0
+    Attrs Seed2(int64 x) {
+      Attrs ret = *this;
+      ret.seed2_ = x;
+      return ret;
+    }
+
+    int64 seed_ = 0;
+    int64 seed2_ = 0;
+  };
+  RandomPoisson(const ::tensorflow::Scope& scope, ::tensorflow::Input shape,
+              ::tensorflow::Input rate);
+  RandomPoisson(const ::tensorflow::Scope& scope, ::tensorflow::Input shape,
+              ::tensorflow::Input rate, const RandomPoisson::Attrs& attrs);
+  operator ::tensorflow::Output() const { return output; }
+  operator ::tensorflow::Input() const { return output; }
+  ::tensorflow::Node* node() const { return output.node(); }
+
+  static Attrs Seed(int64 x) {
+    return Attrs().Seed(x);
+  }
+  static Attrs Seed2(int64 x) {
+    return Attrs().Seed2(x);
+  }
+
+  ::tensorflow::Output output;
+};
+
 /// Outputs random values from the Poisson distribution(s) described by rate.
 ///
 /// This op uses two algorithms, depending on rate. If rate >= 10, then
@@ -249,11 +308,10 @@ class RandomGamma {
 /// Returns:
 /// * `Output`: A tensor with shape `shape + shape(rate)`. Each slice
 /// `[:, ..., :, i0, i1, ...iN]` contains the samples drawn for
-/// `rate[i0, i1, ...iN]`. The dtype of the output matches the dtype of
-/// rate.
-class RandomPoisson {
+/// `rate[i0, i1, ...iN]`.
+class RandomPoissonV2 {
  public:
-  /// Optional attribute setters for RandomPoisson
+  /// Optional attribute setters for RandomPoissonV2
   struct Attrs {
     /// If either `seed` or `seed2` are set to be non-zero, the random number
     /// generator is seeded by the given seed.  Otherwise, it is seeded by a
@@ -275,13 +333,21 @@ class RandomPoisson {
       return ret;
     }
 
+    /// Defaults to DT_INT64
+    Attrs Dtype(DataType x) {
+      Attrs ret = *this;
+      ret.dtype_ = x;
+      return ret;
+    }
+
     int64 seed_ = 0;
     int64 seed2_ = 0;
+    DataType dtype_ = DT_INT64;
   };
-  RandomPoisson(const ::tensorflow::Scope& scope, ::tensorflow::Input shape,
-              ::tensorflow::Input rate);
-  RandomPoisson(const ::tensorflow::Scope& scope, ::tensorflow::Input shape,
-              ::tensorflow::Input rate, const RandomPoisson::Attrs& attrs);
+  RandomPoissonV2(const ::tensorflow::Scope& scope, ::tensorflow::Input shape,
+                ::tensorflow::Input rate);
+  RandomPoissonV2(const ::tensorflow::Scope& scope, ::tensorflow::Input shape,
+                ::tensorflow::Input rate, const RandomPoissonV2::Attrs& attrs);
   operator ::tensorflow::Output() const { return output; }
   operator ::tensorflow::Input() const { return output; }
   ::tensorflow::Node* node() const { return output.node(); }
@@ -291,6 +357,9 @@ class RandomPoisson {
   }
   static Attrs Seed2(int64 x) {
     return Attrs().Seed2(x);
+  }
+  static Attrs Dtype(DataType x) {
+    return Attrs().Dtype(x);
   }
 
   ::tensorflow::Output output;

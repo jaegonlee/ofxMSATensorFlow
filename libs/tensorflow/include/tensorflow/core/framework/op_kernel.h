@@ -24,16 +24,12 @@ limitations under the License.
 #include "tensorflow/core/framework/cancellation.h"
 #include "tensorflow/core/framework/control_flow.h"
 #include "tensorflow/core/framework/device_base.h"
-#include "tensorflow/core/framework/function.h"  // TODO(b/62899350): Remove
-#include "tensorflow/core/framework/graph.pb.h"  // TODO(b/62899350): Remove
-#include "tensorflow/core/framework/kernel_def.pb.h"  // TODO(b/62899350): Remove
 #include "tensorflow/core/framework/kernel_def_builder.h"
 #include "tensorflow/core/framework/node_def_util.h"
 #include "tensorflow/core/framework/op.h"  // TODO(b/62899350): Remove
 #include "tensorflow/core/framework/rendezvous.h"
 #include "tensorflow/core/framework/selective_registration.h"
 #include "tensorflow/core/framework/session_state.h"
-#include "tensorflow/core/framework/step_stats.pb.h"  // TODO(b/62899350): Remove
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/framework/tensor_shape.pb.h"  // TODO(b/62899350): Remove
@@ -65,7 +61,7 @@ class TensorSliceReaderCacheWrapper;
 }  // namespace checkpoint
 
 class AsyncOpKernel;
-class FunctionCallFrame;
+class CallFrameInterface;
 class FunctionLibraryRuntime;
 class OpKernelConstruction;  // declared below
 class OpKernelContext;       // declared below
@@ -305,6 +301,9 @@ class OpKernelConstruction {
   template <class T>
   Status GetAttr(StringPiece attr_name, T* value) const;
 
+  // Return true if the attr_name is defined in def().
+  bool HasAttr(StringPiece attr_name) const;
+
   // Return the device type.
   const DeviceType& device_type() const { return device_type_; }
 
@@ -314,7 +313,7 @@ class OpKernelConstruction {
   FunctionLibraryRuntime* function_library() const { return flib_; }
 
   // The GraphDef version whose behavior we should follow.
-  const int graph_def_version() const { return graph_def_version_; }
+  int graph_def_version() const { return graph_def_version_; }
 
   // Helper routines for the OP_REQUIRES macros
   void CtxFailure(Status s);
@@ -549,7 +548,7 @@ class OpKernelContext {
     FrameAndIter frame_iter;
 
     // Function call supports.
-    FunctionCallFrame* call_frame = nullptr;
+    CallFrameInterface* call_frame = nullptr;
     FunctionLibraryRuntime* function_library = nullptr;
     std::function<void(std::function<void()>)>* runner = nullptr;
     StepStatsCollector* stats_collector = nullptr;
@@ -931,7 +930,7 @@ class OpKernelContext {
   //
   // If this kernel invocation is within a function execution,
   // call_frame() returns the call frame for the function call.
-  FunctionCallFrame* call_frame() const { return params_->call_frame; }
+  CallFrameInterface* call_frame() const { return params_->call_frame; }
 
   // If not nullptr, the kernel invoke functions defined in the
   // library. E.g., CHECK_NOTNULL(function_library())->Run("Foo", ...).
@@ -1493,26 +1492,30 @@ inline void OpOutputList::set_ref(int i, mutex* mu, Tensor* tensor_for_ref) {
 // }
 
 #define OP_REQUIRES(CTX, EXP, STATUS) \
-  if (!TF_PREDICT_TRUE(EXP)) {        \
-    (CTX)->CtxFailure((STATUS));      \
-    return;                           \
-  }
+  do {                                \
+    if (!TF_PREDICT_TRUE(EXP)) {      \
+      (CTX)->CtxFailure((STATUS));    \
+      return;                         \
+    }                                 \
+  } while (0)
 
-#define OP_REQUIRES_OK(CTX, STATUS)     \
-  do {                                  \
-    ::tensorflow::Status _s(STATUS);    \
-    if (!TF_PREDICT_TRUE(_s.ok())) {    \
-      (CTX)->CtxFailureWithWarning(_s); \
-      return;                           \
-    }                                   \
+#define OP_REQUIRES_OK(CTX, ...)          \
+  do {                                    \
+    ::tensorflow::Status _s(__VA_ARGS__); \
+    if (!TF_PREDICT_TRUE(_s.ok())) {      \
+      (CTX)->CtxFailureWithWarning(_s);   \
+      return;                             \
+    }                                     \
   } while (0)
 
 #define OP_REQUIRES_ASYNC(CTX, EXP, STATUS, CALLBACK) \
-  if (!TF_PREDICT_TRUE(EXP)) {                        \
-    (CTX)->CtxFailure((STATUS));                      \
-    (CALLBACK)();                                     \
-    return;                                           \
-  }
+  do {                                                \
+    if (!TF_PREDICT_TRUE(EXP)) {                      \
+      (CTX)->CtxFailure((STATUS));                    \
+      (CALLBACK)();                                   \
+      return;                                         \
+    }                                                 \
+  } while (0)
 
 #define OP_REQUIRES_OK_ASYNC(CTX, STATUS, CALLBACK) \
   do {                                              \

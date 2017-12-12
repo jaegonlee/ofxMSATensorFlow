@@ -423,7 +423,8 @@ class MaxPoolGradWithArgmax {
 /// Arguments:
 /// * scope: A Scope object
 /// * gradients: The backpropagated gradients to the corresponding Relu6 operation.
-/// * features: The features passed as input to the corresponding Relu6 operation.
+/// * features: The features passed as input to the corresponding Relu6 operation, or
+/// its output; using either one produces the same result.
 ///
 /// Returns:
 /// * `Output`: The gradients:
@@ -460,6 +461,27 @@ class ReluGrad {
   ::tensorflow::Output backprops;
 };
 
+/// Computes gradients for the scaled exponential linear (Selu) operation.
+///
+/// Arguments:
+/// * scope: A Scope object
+/// * gradients: The backpropagated gradients to the corresponding Selu operation.
+/// * outputs: The outputs of the corresponding Selu operation.
+///
+/// Returns:
+/// * `Output`: The gradients: `gradients * (outputs + scale * alpha)`
+/// if outputs < 0, `scale * gradients` otherwise.
+class SeluGrad {
+ public:
+  SeluGrad(const ::tensorflow::Scope& scope, ::tensorflow::Input gradients,
+         ::tensorflow::Input outputs);
+  operator ::tensorflow::Output() const { return backprops; }
+  operator ::tensorflow::Input() const { return backprops; }
+  ::tensorflow::Node* node() const { return backprops.node(); }
+
+  ::tensorflow::Output backprops;
+};
+
 /// Computes softplus gradients for a softplus operation.
 ///
 /// Arguments:
@@ -488,7 +510,7 @@ class SoftplusGrad {
 /// * features: The features passed as input to the corresponding softsign operation.
 ///
 /// Returns:
-/// * `Output`: The gradients: `gradients / (1 + abs(-features)) ** 2`.
+/// * `Output`: The gradients: `gradients / (1 + abs(features)) ** 2`.
 class SoftsignGrad {
  public:
   SoftsignGrad(const ::tensorflow::Scope& scope, ::tensorflow::Input gradients,

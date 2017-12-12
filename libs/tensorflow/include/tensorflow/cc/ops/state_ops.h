@@ -252,6 +252,113 @@ class IsVariableInitialized {
   ::tensorflow::Output is_initialized;
 };
 
+/// Increments variable pointed to by 'resource' until it reaches 'limit'.
+///
+/// Arguments:
+/// * scope: A Scope object
+/// * resource: Should be from a scalar `Variable` node.
+/// * limit: If incrementing ref would bring it above limit, instead generates an
+/// 'OutOfRange' error.
+///
+/// Returns:
+/// * `Output`: A copy of the input before increment. If nothing else modifies the
+/// input, the values produced will all be distinct.
+class ResourceCountUpTo {
+ public:
+  ResourceCountUpTo(const ::tensorflow::Scope& scope, ::tensorflow::Input
+                  resource, int64 limit, DataType T);
+  operator ::tensorflow::Output() const { return output; }
+  operator ::tensorflow::Input() const { return output; }
+  ::tensorflow::Node* node() const { return output.node(); }
+
+  ::tensorflow::Output output;
+};
+
+/// Applies sparse `updates` to individual values or slices within a given
+///
+/// variable according to `indices`.
+///
+/// `ref` is a `Tensor` with rank `P` and `indices` is a `Tensor` of rank `Q`.
+///
+/// `indices` must be integer tensor, containing indices into `ref`.
+/// It must be shape `[d_0, ..., d_{Q-2}, K]` where `0 < K <= P`.
+///
+/// The innermost dimension of `indices` (with length `K`) corresponds to
+/// indices into elements (if `K = P`) or slices (if `K < P`) along the `K`th
+/// dimension of `ref`.
+///
+/// `updates` is `Tensor` of rank `Q-1+P-K` with shape:
+///
+/// ```
+/// [d_0, ..., d_{Q-2}, ref.shape[K], ..., ref.shape[P-1]].
+/// ```
+///
+/// For example, say we want to update 4 scattered elements to a rank-1 tensor to
+/// 8 elements. In Python, that update would look like this:
+///
+/// ```python
+///     ref = tfe.Variable([1, 2, 3, 4, 5, 6, 7, 8])
+///     indices = tf.constant([[4], [3], [1] ,[7]])
+///     updates = tf.constant([9, 10, 11, 12])
+///     update = tf.scatter_nd_update(ref, indices, updates)
+///     with tf.Session() as sess:
+///       print sess.run(update)
+/// ```
+///
+/// The resulting update to ref would look like this:
+///
+///     [1, 11, 3, 10, 9, 6, 7, 12]
+///
+/// See @{tf.scatter_nd} for more details about how to make updates to
+/// slices.
+///
+/// Arguments:
+/// * scope: A Scope object
+/// * ref: A resource handle. Must be from a VarHandleOp.
+/// * indices: A Tensor. Must be one of the following types: int32, int64.
+/// A tensor of indices into ref.
+/// * updates: A Tensor. Must have the same type as ref. A tensor of updated
+/// values to add to ref.
+///
+/// Optional attributes (see `Attrs`):
+/// * use_locking: An optional bool. Defaults to True. If True, the assignment will
+/// be protected by a lock; otherwise the behavior is undefined,
+/// but may exhibit less contention.
+///
+/// Returns:
+/// * the created `Operation`
+class ResourceScatterNdUpdate {
+ public:
+  /// Optional attribute setters for ResourceScatterNdUpdate
+  struct Attrs {
+    /// An optional bool. Defaults to True. If True, the assignment will
+    /// be protected by a lock; otherwise the behavior is undefined,
+    /// but may exhibit less contention.
+    ///
+    /// Defaults to true
+    Attrs UseLocking(bool x) {
+      Attrs ret = *this;
+      ret.use_locking_ = x;
+      return ret;
+    }
+
+    bool use_locking_ = true;
+  };
+  ResourceScatterNdUpdate(const ::tensorflow::Scope& scope, ::tensorflow::Input
+                        ref, ::tensorflow::Input indices, ::tensorflow::Input
+                        updates);
+  ResourceScatterNdUpdate(const ::tensorflow::Scope& scope, ::tensorflow::Input
+                        ref, ::tensorflow::Input indices, ::tensorflow::Input
+                        updates, const ResourceScatterNdUpdate::Attrs& attrs);
+  operator ::tensorflow::Operation() const { return operation; }
+
+  static Attrs UseLocking(bool x) {
+    return Attrs().UseLocking(x);
+  }
+
+  Operation operation;
+};
+
 /// Adds sparse updates to a variable reference.
 ///
 /// This operation computes
